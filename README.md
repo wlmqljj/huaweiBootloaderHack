@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # unlock Huawei bootloader
 
 ## Summary
