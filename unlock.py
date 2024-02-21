@@ -20,8 +20,9 @@ failedAttemptsFilename  = 'failedAttempts.json'
 # if your device has a limit of false attempts before reboot
 # otherwise set isLimitAttemptEnabled to false
 limitAttempt            = 5
-isLimitAttemptEnabled   = False
+isLimitAttemptEnabled   = True
 startingPoint           = 1000000000000000
+timeoutsec              = 35
 
 ###############################################################################
 
@@ -70,39 +71,50 @@ def tryUnlockBootloader(imei, checksum, failedAttempts = set([ ])):
   countAttempts     = 0
 
   while(unlocked == False):
-    countAttempts += 1
+    try:
+      countAttempts += 1
 
-    while algoOEMcode in failedAttempts or algoOEMcode < startingPoint:
-      algoOEMcode = algoIncrementChecksum(imei, checksum, algoOEMcode)
+      while algoOEMcode in failedAttempts or algoOEMcode < startingPoint:
+        algoOEMcode = algoIncrementChecksum(imei, checksum, algoOEMcode)
 
-    answer = subprocess.run(
-      ['fastboot', 'oem', 'unlock', str(algoOEMcode)]
-    , stdout = subprocess.DEVNULL
-    , stderr = subprocess.DEVNULL
-    ) 
-
-    if answer.returncode == 0:
-      unlocked = True
-      return algoOEMcode
-    else:
-      failedAttempts.add(algoOEMcode)
-
-    count = len(failedAttempts)
-    print('* shot {0} with code {1} *'.format(count, algoOEMcode))
-    
-    # reboot in bootloader mode after limit of attempts is reached
-    if (count % (limitAttempt - 1) == 0 and isLimitAttemptEnabled == True) or (count % 40000 == 0 and isLimitAttemptEnabled == False):
-      subprocess.run(
-        ['fastboot', 'reboot', 'bootloader']
+      answer = subprocess.run(
+        ['fastboot', 'oem', 'unlock', str(algoOEMcode)]
       , stdout = subprocess.DEVNULL
       , stderr = subprocess.DEVNULL
-      )
+      ,timeout = timeoutsec
+      ) 
 
-    if (isLimitAttemptEnabled and count % (limitAttempt - 1) == 0) or (not isLimitAttemptEnabled and count % 100 == 0):
-      writeFailedAttemptsToFile(failedAttemptsFilename, list(failedAttempts))
+      if answer.returncode == 0:
+        unlocked = True
+        return algoOEMcode
+      else:
+        failedAttempts.add(algoOEMcode)
 
-    algoOEMcode = algoIncrementChecksum(imei, checksum, algoOEMcode)
+      count = len(failedAttempts)
+      print('* shot {0} with code {1} *'.format(count, algoOEMcode))
+      
+      # reboot in bootloader mode after limit of attempts is reached
+      if (count % (limitAttempt - 1) == 0 and isLimitAttemptEnabled == True) or (count % 40000 == 0 and isLimitAttemptEnabled == False):
+        subprocess.run(
+          ['fastboot', 'reboot', 'bootloader']
+        , stdout = subprocess.DEVNULL
+        , stderr = subprocess.DEVNULL
+        ,timeout = timeoutsec
+        )
 
+      if (count % 100 == 0):
+        writeFailedAttemptsToFile(failedAttemptsFilename, list(failedAttempts))
+
+      algoOEMcode = algoIncrementChecksum(imei, checksum, algoOEMcode)
+      
+    except subprocess.TimeoutExpired:
+      print("subprocess.TimeoutExpired")
+      ret = subprocess.run(
+        ['adb', 'reboot', 'bootloader']
+      , stdout = subprocess.DEVNULL
+      , stderr = subprocess.DEVNULL
+      ) 
+      print(ret)
 
 def main(args = [ ]):
   print(welcomeText)
